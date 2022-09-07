@@ -15,7 +15,7 @@ def get_args():
     parser.add_argument("--result_dir", type=str, default=Path(__file__).parent.parent / "result")
 
     # training option
-    parser.add_argument("--algorithm", type=str, choices=["iql", "vdn", "qmix", "reinforce", "coma"], default="coma")
+    parser.add_argument("--algorithm", type=str, choices=["iql", "vdn", "qmix", "reinforce", "coma"], default="iql")
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--share_network", type=bool, default=True)
     parser.add_argument("--last_action", type=bool, default=True)
@@ -41,6 +41,7 @@ def get_args():
 
     parser.add_argument("--eval", type=bool, default=False)
     parser.add_argument("--render", type=bool, default=False)
+    parser.add_argument("--plot", type=bool, default=True)
 
     return parser.parse_args()
 

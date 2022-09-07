@@ -33,6 +33,10 @@ class Reinforce:
     def init_hidden(self, num_episode):
         self.eval_h = torch.zeros((num_episode, self.n_agents, self.args.rnn_hidden_dim)).to(self.device)
 
+    def prediction(self, inputs, agent_id):
+        probs, self.eval_h[:, agent_id, :] = self.eval_net(inputs, self.eval_h[:, agent_id, :])
+        return probs
+
     def save_model(self):
         if not self.model_dir.exists():
             self.model_dir.mkdir(parents=True, exist_ok=True)

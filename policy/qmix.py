@@ -40,6 +40,10 @@ class QMix:
         self.eval_h = torch.zeros((num_episode, self.n_agents, self.args.rnn_hidden_dim)).to(self.device)
         self.target_h = torch.zeros((num_episode, self.n_agents, self.args.rnn_hidden_dim)).to(self.device)
 
+    def prediction(self, inputs, agent_id):
+        q_values, self.eval_h[:, agent_id, :] = self.eval_net(inputs, self.eval_h[:, agent_id, :])
+        return q_values
+
     def save_model(self):
         if not self.model_dir.exists():
             self.model_dir.mkdir(parents=True, exist_ok=True)

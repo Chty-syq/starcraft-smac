@@ -3,7 +3,6 @@ from re import S
 
 import torch
 import torch.nn.functional as F
-
 from network.drqn import DRQN
 
 
@@ -22,8 +21,8 @@ class VDN:
         self.eval_net = DRQN(self.inputs_shape, args=args).to(self.device)
         self.target_net = DRQN(self.inputs_shape, args=args).to(self.device)
         if args.load_model and self.model_dir.exists():
-            self.eval_net.load_state_dict(torch.load(self.model_dir / 'drqn_params.pkl'))
-            print('load model success')
+            self.eval_net.load_state_dict(torch.load(self.model_dir / "drqn_params.pkl"))
+            print("load model success")
         self.eval_params = list(self.eval_net.parameters())
         self.optimizer = torch.optim.RMSprop(self.eval_params, lr=args.lr)
 
@@ -37,14 +36,18 @@ class VDN:
         self.eval_h = torch.zeros((num_episode, self.n_agents, self.args.rnn_hidden_dim)).to(self.device)
         self.target_h = torch.zeros((num_episode, self.n_agents, self.args.rnn_hidden_dim)).to(self.device)
 
+    def prediction(self, inputs, agent_id):
+        q_values, self.eval_h[:, agent_id, :] = self.eval_net(inputs, self.eval_h[:, agent_id, :])
+        return q_values
+
     def save_model(self):
         if not self.model_dir.exists():
             self.model_dir.mkdir(parents=True, exist_ok=True)
-        torch.save(self.eval_net.state_dict(), self.model_dir / 'drqn_params.pkl')
-        print('model saved')
+        torch.save(self.eval_net.state_dict(), self.model_dir / "drqn_params.pkl")
+        print("model saved")
 
     def get_inputs(self, batch, index):
-        o, o_next, u = batch['o'], batch['o_next'], batch['u']
+        o, o_next, u = batch["o"], batch["o_next"], batch["u"]
         n_episode = o.shape[0]
 
         inputs = torch.from_numpy(o[:, index])  # (n_episode, n_agents, obs_dim)
@@ -77,8 +80,8 @@ class VDN:
         # t: (n_episode, episode_length)
         # au_next: (n_episode, episode_length, n_agents, n_actions)
         # padding: (n_episode, episode_length)
-        o, u, r, t = batch['o'], batch['u'], batch['r'], batch['t']
-        o_next, s_next, au_next, padding = batch['o_next'], batch['s_next'], batch['au_next'], batch['padding']
+        o, u, r, t = batch["o"], batch["u"], batch["r"], batch["t"]
+        o_next, s_next, au_next, padding = batch["o_next"], batch["s_next"], batch["au_next"], batch["padding"]
 
         num_episode = o.shape[0]
         self.init_hidden(num_episode)
@@ -111,7 +114,7 @@ class VDN:
         targets = r + self.args.gamma * q_vdn_targets * (1 - t)
         td_error = (q_vdn_evals - targets.detach()) * mask
 
-        loss = (td_error ** 2).sum() / mask.sum()
+        loss = (td_error**2).sum() / mask.sum()
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.eval_params, self.args.grad_norm_clip)
@@ -120,4 +123,4 @@ class VDN:
         if train_step > 0 and train_step % self.args.tau == 0:
             self.target_net.load_state_dict(self.eval_net.state_dict())
 
-        return loss.item()
+        return {"Loss": loss.item()}

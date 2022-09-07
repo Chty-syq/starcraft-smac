@@ -62,7 +62,8 @@ class Runner:
                 print("win_rate: {}, mean_reward: {}".format(win_rate, episode_reward))
                 self.tensorboard.add_scalar("Evaluate/WinRate", win_rate, evaluate_step)
                 self.tensorboard.add_scalar("Evaluate/Reward", episode_reward, evaluate_step)
-                self.plt_result()
+                if self.args.plot:
+                    self.plt_result()
                 evaluate_step += 1
 
         self.agents.policy.save_model()
