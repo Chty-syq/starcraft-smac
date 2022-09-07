@@ -20,6 +20,10 @@ class RolloutWorker:
         self.anneal_steps = args.anneal_steps
         self.epsilon_anneal = (self.epsilon - self.epsilon_min) / self.anneal_steps
 
+    def anneal_epsilon(self):
+        if self.epsilon - self.epsilon_anneal >= self.epsilon_min:
+            self.epsilon = self.epsilon - self.epsilon_anneal
+
     @torch.no_grad()
     def generate_episode(self, evaluate=False):
         self.env.reset()
@@ -32,7 +36,8 @@ class RolloutWorker:
         o, u, r, s, t, avail_u, padding = [], [], [], [], [], [], []
         last_action = np.zeros(self.n_agents, dtype=int)
 
-        epsilon = 0 if evaluate else self.epsilon
+        if not evaluate and self.args.anneal_mode == "episode":
+            self.anneal_epsilon()
 
         while n_step < self.episode_limit and not terminated:
             obs = self.env.get_obs()  # (n_agents, obs_dim)
@@ -40,19 +45,17 @@ class RolloutWorker:
             if self.args.render:
                 self.env.render()
                 time.sleep(0.1)
-            if epsilon - self.epsilon_anneal > self.epsilon_min:
-                epsilon = epsilon - self.epsilon_anneal
+            if not evaluate and self.args.anneal_mode == "step":
+                self.anneal_epsilon()
+            epsilon = 0 if evaluate else self.epsilon
 
             actions, avail_actions = [], []
-
             for agent_id in range(self.n_agents):
                 avail_action = self.env.get_avail_agent_actions(agent_id)
-                action = self.agents.choose_action(agent_id, obs[agent_id], avail_action, last_action[agent_id],
-                                                   epsilon)
-
-                last_action[agent_id] = action
-                actions.append(np.int(action))
+                action = self.agents.choose_action(agent_id, obs[agent_id], avail_action, last_action[agent_id], epsilon, evaluate)
+                actions.append(action)
                 avail_actions.append(avail_action)
+                last_action[agent_id] = action
 
             reward, terminated, info = self.env.step(actions)
 
@@ -65,7 +68,7 @@ class RolloutWorker:
             padding.append(0)
 
             episode_reward += reward
-            battle_won = True if terminated and 'battle_won' in info and info['battle_won'] else False
+            battle_won = True if terminated and "battle_won" in info and info["battle_won"] else False
             n_step += 1
 
         obs = self.env.get_obs()
@@ -108,10 +111,6 @@ class RolloutWorker:
         avail_u_next = np.array(avail_u_next, dtype=np.int)
         padding = np.array(padding, dtype=np.int)
 
-        episode = dict(o=o, u=u, s=s, r=r, t=t, s_next=s_next, o_next=o_next, au=avail_u, au_next=avail_u_next,
-                       padding=padding)
-
-        if not evaluate:
-            self.epsilon = epsilon
+        episode = dict(o=o, u=u, s=s, r=r, t=t, s_next=s_next, o_next=o_next, au=avail_u, au_next=avail_u_next, padding=padding)
 
         return episode, n_step, battle_won, episode_reward

@@ -2,7 +2,6 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-
 from network.drqn import DRQN
 from network.qmix import QMixNet
 
@@ -24,9 +23,9 @@ class QMix:
         self.eval_qmix_net = QMixNet(args).to(self.device)
         self.target_qmix_net = QMixNet(args).to(self.device)
         if args.load_model and self.model_dir.exists():
-            self.eval_net.load_state_dict(torch.load(self.model_dir / 'drqn_params.pkl'))
-            self.eval_qmix_net.load_state_dict(torch.load(self.model_dir / 'qmix_params.pkl'))
-            print('load model success')
+            self.eval_net.load_state_dict(torch.load(self.model_dir / "drqn_params.pkl"))
+            self.eval_qmix_net.load_state_dict(torch.load(self.model_dir / "qmix_params.pkl"))
+            print("load model success")
         self.eval_params = list(self.eval_net.parameters()) + list(self.eval_qmix_net.parameters())
         self.optimizer = torch.optim.RMSprop(self.eval_params, lr=args.lr)
 
@@ -44,12 +43,12 @@ class QMix:
     def save_model(self):
         if not self.model_dir.exists():
             self.model_dir.mkdir(parents=True, exist_ok=True)
-        torch.save(self.eval_net.state_dict(), self.model_dir / 'drqn_params.pkl')
-        torch.save(self.eval_qmix_net.state_dict(), self.model_dir / 'qmix_params.pkl')
-        print('model saved')
+        torch.save(self.eval_net.state_dict(), self.model_dir / "drqn_params.pkl")
+        torch.save(self.eval_qmix_net.state_dict(), self.model_dir / "qmix_params.pkl")
+        print("model saved")
 
     def get_inputs(self, batch, index):
-        o, o_next, u = batch['o'], batch['o_next'], batch['u']
+        o, o_next, u = batch["o"], batch["o_next"], batch["u"]
         n_episode = o.shape[0]
 
         inputs = torch.from_numpy(o[:, index])  # (n_episode, n_agents, obs_dim)
@@ -82,8 +81,8 @@ class QMix:
         # t: (n_episode, episode_length)
         # au_next: (n_episode, episode_length, n_agents, n_actions)
         # padding: (n_episode, episode_length)
-        o, s, u, r, t = batch['o'], batch['s'], batch['u'], batch['r'], batch['t']
-        o_next, s_next, au_next, padding = batch['o_next'], batch['s_next'], batch['au_next'], batch['padding']
+        o, s, u, r, t = batch["o"], batch["s"], batch["u"], batch["r"], batch["t"]
+        o_next, s_next, au_next, padding = batch["o_next"], batch["s_next"], batch["au_next"], batch["padding"]
 
         num_episode = o.shape[0]
         self.init_hidden(num_episode)
@@ -119,7 +118,7 @@ class QMix:
         targets = r + self.args.gamma * q_qmix_targets * (1 - t)
         td_error = (q_qmix_evals - targets.detach()) * mask
 
-        loss = (td_error ** 2).sum() / mask.sum()
+        loss = (td_error**2).sum() / mask.sum()
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.eval_params, self.args.grad_norm_clip)
@@ -129,4 +128,4 @@ class QMix:
             self.target_net.load_state_dict(self.eval_net.state_dict())
             self.target_qmix_net.load_state_dict(self.eval_qmix_net.state_dict())
 
-        return loss.item()
+        return {"Loss": loss.item()}

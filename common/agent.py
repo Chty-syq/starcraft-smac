@@ -1,8 +1,9 @@
 import numpy as np
 import torch
-
+from policy.coma import COMA
 from policy.iql import IQL
 from policy.qmix import QMix
+from policy.reinforce import Reinforce
 from policy.vdn import VDN
 
 
@@ -12,16 +13,20 @@ class Agents:
         self.n_actions = args.n_actions
         self.n_agents = args.n_agents
         self.device = args.device
-        if args.algorithm == 'iql':
+        if args.algorithm == "iql":
             self.policy = IQL(args)
-        elif args.algorithm == 'vdn':
+        elif args.algorithm == "vdn":
             self.policy = VDN(args)
-        elif args.algorithm == 'qmix':
+        elif args.algorithm == "qmix":
             self.policy = QMix(args)
+        elif args.algorithm == "reinforce":
+            self.policy = Reinforce(args)
+        elif args.algorithm == "coma":
+            self.policy = COMA(args)
         else:
             raise Exception("No such algorithm")
 
-    def choose_action(self, agent_id, obs, avail_actions, last_action, epsilon):
+    def choose_action(self, agent_id, obs, avail_actions, last_action, epsilon, evaluate):
         inputs = obs.copy()
         if self.args.last_action:
             last_action_onehot = np.zeros(self.n_actions)
@@ -32,21 +37,26 @@ class Agents:
             identity[agent_id] = 1
             inputs = np.hstack((inputs, identity))
 
-        h = self.policy.eval_h[:, agent_id, :]
         avail_actions_index = np.nonzero(avail_actions)[0]
-
+        avail_actions = torch.tensor(avail_actions).unsqueeze(0)
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1, obs_dim)
-        avail_actions = torch.tensor(avail_actions, dtype=torch.float32).unsqueeze(0)
 
-        q_value, self.policy.eval_h[:, agent_id, :] = self.policy.eval_net(inputs, h)
-        q_value[avail_actions == 0.0] = -float('inf')
-
-        if np.random.uniform() < epsilon:
-            action = np.random.choice(avail_actions_index)
+        if not self.args.pg:
+            if np.random.uniform() < epsilon:
+                action = np.random.choice(avail_actions_index)
+            else:
+                q_value = self.policy.prediction(inputs, agent_id)
+                q_value[avail_actions == 0] = -float("inf")
+                action = torch.argmax(q_value)
         else:
-            action = torch.argmax(q_value)
+            n_avail_actions = avail_actions.sum(dim=-1, keepdim=True).repeat(1, avail_actions.shape[-1])
+            probs = self.policy.prediction(inputs, agent_id)
+            probs = torch.nn.functional.softmax(probs.cpu(), dim=-1)
+            probs = probs * (1 - epsilon) + torch.ones_like(probs) * epsilon / n_avail_actions
+            probs[avail_actions == 0] = 0.0
+            action = torch.distributions.Categorical(probs).sample()
 
-        return action
+        return np.int(action)
 
     @staticmethod
     def prep_batch_dict(batch):
@@ -62,7 +72,7 @@ class Agents:
 
     def get_episode_length_max(self, batch):
         episode_length_max = 0
-        terminated = batch['t']
+        terminated = batch["t"]
         episode_num = terminated.shape[0]
         for i in range(episode_num):
             for j in range(self.args.episode_limit):
@@ -75,12 +85,17 @@ class Agents:
 
         return episode_length_max
 
-    def train(self, batch, train_step):
+    def train(self, batch, train_step, epsilon=None):
         batch = self.prep_batch_dict(batch)
         episode_length = self.get_episode_length_max(batch)
         for key in batch.keys():
             batch[key] = batch[key][:, :episode_length]
-        loss = self.policy.learn(batch, train_step, episode_length)
+
+        if not self.args.pg:
+            loss = self.policy.learn(batch, train_step, episode_length)
+        else:
+            loss = self.policy.learn(batch, train_step, episode_length, epsilon)
+
         if train_step > 0 and train_step % self.args.save_cycle == 0:
             self.policy.save_model()
         return loss

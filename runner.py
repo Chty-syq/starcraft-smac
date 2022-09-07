@@ -15,6 +15,7 @@ class Runner:
     def __init__(self, env, args):
         self.env = env
         self.args = args
+        self.args.pg = (args.algorithm.find("reinforce") > -1) or (args.algorithm.find("coma") > -1)  # policy gradient method
         self.agents = Agents(args)
         self.rolloutWorker = RolloutWorker(env, self.agents, args)
         self.buffer = ReplayBuffer(args)
@@ -37,26 +38,30 @@ class Runner:
         epoch, train_step, evaluate_step = 0, 0, 0
         while epoch < self.args.epochs:
             episode, n_step, battle_won, episode_reward = self.rolloutWorker.generate_episode()
-            self.buffer.push(episode)
 
-            batch_size = min(len(self.buffer), self.args.batch_size)
-            mini_batch = self.buffer.sample(batch_size)
-            loss = self.agents.train(mini_batch, train_step)
+            if not self.args.pg:
+                self.buffer.push(episode)
+                batch_size = min(len(self.buffer), self.args.batch_size)
+                mini_batch = self.buffer.sample(batch_size)
+                loss = self.agents.train(mini_batch, train_step)
+            else:
+                loss = self.agents.train([episode], train_step, self.rolloutWorker.epsilon)
 
             epoch += n_step
             train_step += 1
 
-            self.tensorboard.add_scalar('Train/Loss', loss, epoch)
-            self.tensorboard.add_scalar('Train/Reward', episode_reward, epoch)
-            self.tensorboard.add_scalar('Train/Epsilon', self.rolloutWorker.epsilon, epoch)
+            self.tensorboard.add_scalar("Train/Reward", episode_reward, train_step)
+            self.tensorboard.add_scalar("Train/Epsilon", self.rolloutWorker.epsilon, train_step)
+            for key in loss.keys():
+                self.tensorboard.add_scalar("Train/" + key, loss[key], train_step)
 
             if epoch // self.args.evaluate_cycle > evaluate_step:
                 win_rate, episode_reward = self.evaluate()
                 self.win_rates.append(win_rate)
                 self.episode_rewards.append(episode_reward)
                 print("win_rate: {}, mean_reward: {}".format(win_rate, episode_reward))
-                self.tensorboard.add_scalar('Evaluate/WinRate', win_rate, evaluate_step)
-                self.tensorboard.add_scalar('Evaluate/Reward', episode_reward, evaluate_step)
+                self.tensorboard.add_scalar("Evaluate/WinRate", win_rate, evaluate_step)
+                self.tensorboard.add_scalar("Evaluate/Reward", episode_reward, evaluate_step)
                 self.plt_result()
                 evaluate_step += 1
 
@@ -76,15 +81,15 @@ class Runner:
         plt.cla()
         plt.subplot(2, 1, 1)
         plt.plot(range(len(self.win_rates)), self.win_rates)
-        plt.xlabel('Epoch')
-        plt.ylabel('WinRate')
+        plt.xlabel("Epoch")
+        plt.ylabel("WinRate")
 
         plt.subplot(2, 1, 2)
         plt.plot(range(len(self.episode_rewards)), self.episode_rewards)
-        plt.xlabel('Epoch')
-        plt.ylabel('Reward')
+        plt.xlabel("Epoch")
+        plt.ylabel("Reward")
 
-        plt.savefig(self.result_dir / 'result.png', format='png')
-        np.save(self.result_dir / 'win_rates', self.win_rates)
-        np.save(self.result_dir / 'episode_rewards', self.episode_rewards)
+        plt.savefig(self.result_dir / "result.png", format="png")
+        np.save(self.result_dir / "win_rates", self.win_rates)
+        np.save(self.result_dir / "episode_rewards", self.episode_rewards)
         plt.close()
